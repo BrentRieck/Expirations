@@ -115,9 +115,23 @@ let currentSearch = '';
 let currentOffice = null;
 let offices = [];
 
+function getSession() {
+    const sessionData = localStorage.getItem('userSession');
+    if (!sessionData) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(sessionData);
+    } catch (error) {
+        console.error('Failed to parse user session from localStorage:', error);
+        return null;
+    }
+}
+
 // Check authentication
 function checkAuth() {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     
     if (!session) {
         // No session, redirect to login
@@ -293,6 +307,7 @@ function updateStats() {
 function renderItems() {
     const container = document.getElementById('itemsContainer');
     container.innerHTML = '';
+    const session = getSession();
 
     // Filter items
     let filteredItems = items.filter(item => {
@@ -384,8 +399,7 @@ function renderItems() {
                         }
                     }
                     
-                    const session = JSON.parse(localStorage.getItem('userSession'));
-                    const removeButton = session && !session.readOnly ? 
+                    const removeButton = session && !session.readOnly ?
                         `<button class="btn btn-danger btn-small" onclick="removeExpirationDate('${item.id}', ${index})">Remove</button>` : 
                         '';
                     
@@ -460,7 +474,6 @@ function renderItems() {
     updateStats();
     
     // Disable editing controls if in read-only mode
-    const session = JSON.parse(localStorage.getItem('userSession'));
     if (session && session.readOnly) {
         // Disable all date inputs and add buttons
         document.querySelectorAll('.expiration-input').forEach(input => {
@@ -484,7 +497,7 @@ function renderItems() {
 
 // Add expiration date to an item
 function addExpirationDate(itemId) {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     if (session && session.readOnly) {
         alert('You do not have permission to add expiration dates. Please login with an admin account.');
         return;
@@ -521,7 +534,7 @@ function addExpirationDate(itemId) {
 
 // Remove expiration date from an item
 function removeExpirationDate(itemId, index) {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     if (session && session.readOnly) {
         alert('You do not have permission to remove expiration dates. Please login with an admin account.');
         return;
@@ -537,7 +550,7 @@ function removeExpirationDate(itemId, index) {
 
 // QR Code scanning functionality
 function scanQRCode(itemId) {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     if (session && session.readOnly) {
         alert('You do not have permission to scan QR codes. Please login to use this feature.');
         return;
@@ -753,7 +766,7 @@ function exportToJSON() {
 
 // Clear all data
 function clearAllData() {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     if (session && session.readOnly) {
         alert('You do not have permission to clear data. Please login with an admin account.');
         return;
