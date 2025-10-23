@@ -26,6 +26,19 @@ function getStoredUsers() {
     }
 }
 
+function getUserOfficesKey(username) {
+    return `medicalSupplyOffices_${username}`;
+}
+
+function getUserCurrentOfficeKey(username) {
+    return `currentOfficeId_${username}`;
+}
+
+function removeUserData(username) {
+    localStorage.removeItem(getUserOfficesKey(username));
+    localStorage.removeItem(getUserCurrentOfficeKey(username));
+}
+
 // Check authentication and ensure user is admin
 function checkAuth() {
     const session = getSession();
@@ -84,11 +97,14 @@ function addUser() {
     let users = getStoredUsers();
     
     // Check if user already exists
-    if (users.some(user => user.username === username)) {
+    if (users.some(user => user.username.toLowerCase() === username.toLowerCase())) {
         showMessage('A user with this username already exists', 'error');
         return;
     }
-    
+
+    // Reset any previous stored data for this username
+    removeUserData(username);
+
     // Add new user
     const newUser = {
         username: username,
@@ -121,11 +137,14 @@ function removeUser(username) {
     if (confirm(`Are you sure you want to remove user "${username}"?`)) {
         // Get existing users
         let users = getStoredUsers();
-        
+
         // Remove user
         users = users.filter(user => user.username !== username);
         localStorage.setItem('appUsers', JSON.stringify(users));
-        
+
+        // Remove user-specific data
+        removeUserData(username);
+
         // Refresh user list
         renderUsers();
     }

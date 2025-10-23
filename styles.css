@@ -300,6 +300,46 @@ body {
     max-width: 400px;
 }
 
+.login-tabs {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 25px;
+    background: #f1f3f5;
+    padding: 6px;
+    border-radius: 12px;
+}
+
+.tab-button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: #6c757d;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+    background: rgba(102, 126, 234, 0.08);
+    color: #495057;
+}
+
+.tab-button.active {
+    background: white;
+    color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+}
+
+.form-panel {
+    display: none;
+}
+
+.form-panel.active {
+    display: block;
+}
+
 .login-box h2 {
     margin-bottom: 30px;
     color: #495057;
@@ -340,6 +380,16 @@ body {
     border-radius: 8px;
     margin-bottom: 20px;
     border: 1px solid #f5c6cb;
+}
+
+.info-message {
+    display: none;
+    background: #d4edda;
+    color: #155724;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid #c3e6cb;
 }
 
 .login-box .btn {

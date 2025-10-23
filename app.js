@@ -115,6 +115,64 @@ let currentSearch = '';
 let currentOffice = null;
 let offices = [];
 
+function getStorageNamespace() {
+    const session = getSession();
+    if (!session || session.readOnly) {
+        return 'public';
+    }
+    return session.username;
+}
+
+function getOfficesStorageKey() {
+    const namespace = getStorageNamespace();
+    return namespace === 'public'
+        ? 'medicalSupplyOffices_public'
+        : `medicalSupplyOffices_${namespace}`;
+}
+
+function getCurrentOfficeStorageKey() {
+    const namespace = getStorageNamespace();
+    return namespace === 'public'
+        ? 'currentOfficeId_public'
+        : `currentOfficeId_${namespace}`;
+}
+
+function migrateLegacyDataIfNeeded() {
+    const namespace = getStorageNamespace();
+    const officesKey = getOfficesStorageKey();
+    const currentOfficeKey = getCurrentOfficeStorageKey();
+
+    if (!localStorage.getItem(officesKey)) {
+        if (namespace !== 'public') {
+            const legacyUserKey = `medicalSupplyOffices_${namespace}`;
+            const legacyUserData = localStorage.getItem(legacyUserKey);
+            if (legacyUserData) {
+                localStorage.setItem(officesKey, legacyUserData);
+            } else {
+                const legacySharedData = localStorage.getItem('medicalSupplyOffices');
+                const publicData = localStorage.getItem('medicalSupplyOffices_public');
+                if (legacySharedData) {
+                    localStorage.setItem(officesKey, legacySharedData);
+                } else if (publicData) {
+                    localStorage.setItem(officesKey, publicData);
+                }
+            }
+        } else {
+            const legacySharedData = localStorage.getItem('medicalSupplyOffices');
+            if (legacySharedData) {
+                localStorage.setItem(officesKey, legacySharedData);
+            }
+        }
+    }
+
+    if (!localStorage.getItem(currentOfficeKey)) {
+        const legacyCurrent = localStorage.getItem('currentOfficeId');
+        const publicCurrent = localStorage.getItem('currentOfficeId_public');
+        const fallback = legacyCurrent || publicCurrent || 'default';
+        localStorage.setItem(currentOfficeKey, fallback);
+    }
+}
+
 function getSession() {
     const sessionData = localStorage.getItem('userSession');
     if (!sessionData) {
@@ -164,56 +222,51 @@ function goToOfficeSelector() {
 
 // Load offices from localStorage
 function loadOffices() {
-    const savedOffices = localStorage.getItem('medicalSupplyOffices');
+    migrateLegacyDataIfNeeded();
+    const savedOffices = localStorage.getItem(getOfficesStorageKey());
     if (savedOffices) {
-        offices = JSON.parse(savedOffices);
-    } else {
-        // Initialize with default office
-        offices = [
-            { 
-                id: 'default', 
-                name: 'MVHS New Hartford Medical Office', 
-                items: medicalItems.map(item => ({
-                    ...item,
-                    expirationDates: [],
-                    id: generateId()
-                }))
+        try {
+            const parsed = JSON.parse(savedOffices);
+            if (Array.isArray(parsed)) {
+                offices = parsed;
+                return;
             }
-        ];
-        saveOffices();
+        } catch (error) {
+            console.error('Failed to parse offices from localStorage:', error);
+        }
     }
+
+    offices = [createDefaultOffice()];
+    saveOffices();
 }
 
 // Save offices to localStorage
 function saveOffices() {
-    localStorage.setItem('medicalSupplyOffices', JSON.stringify(offices));
+    localStorage.setItem(getOfficesStorageKey(), JSON.stringify(offices));
 }
 
 // Load data for current office
 function loadOfficeData() {
-    const currentOfficeId = localStorage.getItem('currentOfficeId') || 'default';
-    
+    const currentOfficeKey = getCurrentOfficeStorageKey();
+    let currentOfficeId = localStorage.getItem(currentOfficeKey);
+    if (!currentOfficeId) {
+        currentOfficeId = 'default';
+        localStorage.setItem(currentOfficeKey, currentOfficeId);
+    }
+
     // Find the current office
     currentOffice = offices.find(office => office.id === currentOfficeId);
-    
+
     if (!currentOffice) {
         // If office not found, use default
         currentOffice = offices.find(office => office.id === 'default');
         if (!currentOffice) {
             // If no default office, create one
-            currentOffice = {
-                id: 'default',
-                name: 'MVHS New Hartford Medical Office',
-                items: medicalItems.map(item => ({
-                    ...item,
-                    expirationDates: [],
-                    id: generateId()
-                }))
-            };
+            currentOffice = createDefaultOffice();
             offices.push(currentOffice);
             saveOffices();
         }
-        localStorage.setItem('currentOfficeId', currentOffice.id);
+        localStorage.setItem(currentOfficeKey, currentOffice.id);
     }
     
     // Migrate old item names to new ones
@@ -236,6 +289,18 @@ function loadOfficeData() {
 // Generate unique ID
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+function createDefaultOffice() {
+    return {
+        id: 'default',
+        name: 'MVHS New Hartford Medical Office',
+        items: medicalItems.map(item => ({
+            ...item,
+            expirationDates: [],
+            id: generateId()
+        }))
+    };
 }
 
 // Save data to localStorage
