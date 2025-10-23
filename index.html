@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Supply Expiration Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="jsQR.js"></script>
+</head>
+<body>
+    <div id="readOnlyBanner" class="read-only-banner" style="display: none;">
+        👁️ READ-ONLY MODE - You are viewing as a guest. Login to make changes.
+    </div>
+    <div class="container">
+        <div class="header">
+            <button class="logout-btn" onclick="logout()">Logout</button>
+            <h1>🏥 Medical Supply Expiration Tracker</h1>
+            <p id="officeHeader">Office: <span id="officeName">Loading...</span></p>
+            <p id="userInfo" style="font-size: 0.9em; margin-top: 5px;"></p>
+            <button class="btn btn-secondary" onclick="goToOfficeSelector()" style="margin-top: 10px;">🏢 Change Office</button>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="categorySelector">📁 Step 1: Select Category</label>
+                    <select id="categorySelector">
+                        <option value="">-- Select a category first --</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="itemSelector">📦 Step 2: Select Item</label>
+                    <select id="itemSelector" disabled>
+                        <option value="">-- Select a category first --</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="searchInput">🔍 Search Items</label>
+                    <input type="text" id="searchInput" placeholder="Search by item name or stock number...">
+                </div>
+                <div class="control-group">
+                    <label for="categoryFilter">📁 Filter by Category</label>
+                    <select id="categoryFilter">
+                        <option value="all">All Categories</option>
+                        <option value="tablet-capsule">Tablet/Capsule</option>
+                        <option value="topical">Topical</option>
+                        <option value="ophthalmic">Ophthalmic</option>
+                        <option value="liquids">Liquids</option>
+                        <option value="nasal">Nasal</option>
+                        <option value="respiratory">Respiratory</option>
+                        <option value="insulin">Insulin</option>
+                        <option value="emergency">Emergency Drug Box</option>
+                        <option value="injectable">Injectable</option>
+                        <option value="vaccine">Vaccine</option>
+                        <option value="miscellaneous">Miscellaneous</option>
+                        <option value="seasonal-flu">Seasonal Flu</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="filter-tags">
+                <div class="filter-tag" data-filter="all">All Items</div>
+                <div class="filter-tag" data-filter="expired">Expired</div>
+                <div class="filter-tag" data-filter="expiring-soon">Expiring Soon (30 days)</div>
+                <div class="filter-tag" data-filter="good">Good Condition</div>
+                <div class="filter-tag" data-filter="no-date">No Expiration Set</div>
+            </div>
+
+            <div class="export-section">
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="exportToCSV()">📊 Export to CSV</button>
+                    <button class="btn btn-secondary" onclick="exportToJSON()">💾 Export to JSON</button>
+                    <button class="btn btn-danger" onclick="clearAllData()">🗑️ Clear All Data</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card total">
+                <h3 id="totalItems">0</h3>
+                <p>Total Items</p>
+            </div>
+            <div class="stat-card expired">
+                <h3 id="expiredItems">0</h3>
+                <p>Expired</p>
+            </div>
+            <div class="stat-card expiring-soon">
+                <h3 id="expiringSoonItems">0</h3>
+                <p>Expiring Soon</p>
+            </div>
+            <div class="stat-card good">
+                <h3 id="goodItems">0</h3>
+                <p>Good Condition</p>
+            </div>
+        </div>
+
+        <div class="content" id="itemsContainer">
+            <!-- Items will be dynamically generated here -->
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

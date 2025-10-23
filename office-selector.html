@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Supply Tracker - Office Selector</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="readOnlyBanner" class="read-only-banner" style="display: none;">
+        👁️ READ-ONLY MODE - You are viewing as a guest. Login to make changes.
+    </div>
+    <div class="container">
+        <div class="header">
+            <button class="logout-btn" onclick="logout()">Logout</button>
+            <h1>🏥 Medical Supply Expiration Tracker</h1>
+            <p>Select or manage your office locations</p>
+            <p id="userInfo" style="font-size: 0.9em; margin-top: 10px;"></p>
+            <div id="adminLink" style="margin-top: 10px; display: none;">
+                <button class="btn btn-secondary" onclick="goToUserManagement()">👥 Manage Users</button>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="officeName">🏢 Add New Office Location</label>
+                    <input type="text" id="officeName" placeholder="Enter office name...">
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="addOffice()">➕ Add Office</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <h2 style="margin-bottom: 20px; color: #495057;">🏢 Your Office Locations</h2>
+            <div class="items-grid" id="officesContainer">
+                <!-- Offices will be dynamically generated here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="office-selector.js"></script>
+</body>
+</html>

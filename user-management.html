@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - Medical Supply Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="jsQR.js"></script>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <button class="logout-btn" onclick="logout()">Logout</button>
+            <h1>🏥 Medical Supply Expiration Tracker</h1>
+            <p>User Management</p>
+            <p id="userInfo" style="font-size: 0.9em; margin-top: 10px;"></p>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="newUsername">Username</label>
+                    <input type="text" id="newUsername" placeholder="Enter username...">
+                </div>
+                <div class="control-group">
+                    <label for="newPassword">Password</label>
+                    <input type="password" id="newPassword" placeholder="Enter password...">
+                </div>
+                <div class="control-group">
+                    <label for="userRole">Role</label>
+                    <select id="userRole">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="addUser()">➕ Add User</button>
+                </div>
+            </div>
+            <div id="userMessage" class="error-message" style="display: none;"></div>
+        </div>
+
+        <div class="content">
+            <h2 style="margin-bottom: 20px; color: #495057;">👥 User Accounts</h2>
+            <div class="items-grid" id="usersContainer">
+                <!-- Users will be dynamically generated here -->
+            </div>
+            
+            <div style="margin-top: 30px; text-align: center;">
+                <button class="btn btn-secondary" onclick="goToOfficeSelector()">🏢 Manage Offices</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="user-management.js"></script>
+</body>
+</html>
