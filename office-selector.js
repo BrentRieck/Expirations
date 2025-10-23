@@ -1,5 +1,33 @@
+function getSession() {
+    const sessionData = localStorage.getItem('userSession');
+    if (!sessionData) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(sessionData);
+    } catch (error) {
+        console.error('Failed to parse user session from localStorage:', error);
+        return null;
+    }
+}
+
+function getStoredOffices() {
+    const officesData = localStorage.getItem('medicalSupplyOffices');
+    if (!officesData) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(officesData);
+    } catch (error) {
+        console.error('Failed to parse stored offices from localStorage:', error);
+        return null;
+    }
+}
+
 // Initialize offices from localStorage
-let offices = JSON.parse(localStorage.getItem('medicalSupplyOffices')) || [
+let offices = getStoredOffices() || [
     { id: 'default', name: 'MVHS New Hartford Medical Office', items: [] }
 ];
 
@@ -210,7 +238,7 @@ function renderOffices() {
 
 // Check authentication
 function checkAuth() {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     
     if (!session) {
         // No session, redirect to login
@@ -255,7 +283,7 @@ function goToUserManagement() {
 // Override add office to check permissions
 const originalAddOffice = addOffice;
 addOffice = function() {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     if (session && session.readOnly) {
         alert('You do not have permission to add offices. Please login with an admin account.');
         return;
@@ -266,7 +294,7 @@ addOffice = function() {
 // Override remove office to check permissions
 const originalRemoveOffice = removeOffice;
 removeOffice = function(officeId) {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     if (session && session.readOnly) {
         alert('You do not have permission to remove offices. Please login with an admin account.');
         return;

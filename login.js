@@ -1,8 +1,22 @@
+function getStoredUsers() {
+    const usersData = localStorage.getItem('appUsers');
+    if (!usersData) {
+        return [];
+    }
+
+    try {
+        return JSON.parse(usersData);
+    } catch (error) {
+        console.error('Failed to parse stored users from localStorage:', error);
+        return [];
+    }
+}
+
 // Initialize default admin account if none exists
 function initializeDefaultAdmin() {
-    const users = JSON.parse(localStorage.getItem('appUsers'));
+    const users = getStoredUsers();
     
-    if (!users || users.length === 0) {
+    if (users.length === 0) {
         // Initialize with default admin account
         const defaultUsers = [{
             username: 'admin',
@@ -31,7 +45,7 @@ function handleLogin(event) {
     initializeDefaultAdmin();
     
     // Get all users
-    const users = JSON.parse(localStorage.getItem('appUsers')) || [];
+    const users = getStoredUsers();
     
     // Find user with matching credentials
     const user = users.find(u => u.username === username && u.password === password);

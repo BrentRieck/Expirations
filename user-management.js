@@ -1,6 +1,34 @@
+function getSession() {
+    const sessionData = localStorage.getItem('userSession');
+    if (!sessionData) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(sessionData);
+    } catch (error) {
+        console.error('Failed to parse user session from localStorage:', error);
+        return null;
+    }
+}
+
+function getStoredUsers() {
+    const usersData = localStorage.getItem('appUsers');
+    if (!usersData) {
+        return [];
+    }
+
+    try {
+        return JSON.parse(usersData);
+    } catch (error) {
+        console.error('Failed to parse stored users from localStorage:', error);
+        return [];
+    }
+}
+
 // Check authentication and ensure user is admin
 function checkAuth() {
-    const session = JSON.parse(localStorage.getItem('userSession'));
+    const session = getSession();
     
     if (!session || !session.loggedIn) {
         // No session, redirect to login
@@ -53,7 +81,7 @@ function addUser() {
     }
     
     // Get existing users
-    let users = JSON.parse(localStorage.getItem('appUsers')) || [];
+    let users = getStoredUsers();
     
     // Check if user already exists
     if (users.some(user => user.username === username)) {
@@ -92,7 +120,7 @@ function removeUser(username) {
     
     if (confirm(`Are you sure you want to remove user "${username}"?`)) {
         // Get existing users
-        let users = JSON.parse(localStorage.getItem('appUsers')) || [];
+        let users = getStoredUsers();
         
         // Remove user
         users = users.filter(user => user.username !== username);
@@ -126,7 +154,7 @@ function renderUsers() {
     container.innerHTML = '';
     
     // Get users
-    const users = JSON.parse(localStorage.getItem('appUsers')) || [];
+    const users = getStoredUsers();
     
     if (users.length === 0) {
         container.innerHTML = `
