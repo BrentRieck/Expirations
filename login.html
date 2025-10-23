@@ -16,20 +16,65 @@
 
         <div class="login-container">
             <div class="login-box">
-                <h2>Login</h2>
-                <form id="loginForm" onsubmit="handleLogin(event)">
-                    <div class="form-group">
-                        <label for="username">Username</label>
-                        <input type="text" id="username" name="username" required autocomplete="username">
-                    </div>
-                    <div class="form-group">
-                        <label for="password">Password</label>
-                        <input type="password" id="password" name="password" required autocomplete="current-password">
-                    </div>
-                    <div id="errorMessage" class="error-message"></div>
-                    <button type="submit" class="btn btn-primary">Login</button>
-                    <button type="button" class="btn btn-secondary" onclick="viewAsGuest()">View as Guest (Read-Only)</button>
-                </form>
+                <div class="login-tabs">
+                    <button type="button" class="tab-button active" data-target="loginPanel">User Login</button>
+                    <button type="button" class="tab-button" data-target="adminPanel">Admin Login</button>
+                    <button type="button" class="tab-button" data-target="registerPanel">Create Account</button>
+                </div>
+
+                <div id="loginPanel" class="form-panel active">
+                    <h2>Login</h2>
+                    <form id="loginForm" onsubmit="handleLogin(event)">
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input type="text" id="username" name="username" required autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password" required autocomplete="current-password">
+                        </div>
+                        <div id="loginMessage" class="error-message"></div>
+                        <button type="submit" class="btn btn-primary">Login</button>
+                        <button type="button" class="btn btn-secondary" onclick="viewAsGuest()">View as Guest (Read-Only)</button>
+                    </form>
+                </div>
+
+                <div id="adminPanel" class="form-panel">
+                    <h2>Admin Login</h2>
+                    <form id="adminLoginForm" onsubmit="handleAdminLogin(event)">
+                        <div class="form-group">
+                            <label for="adminUsername">Admin Username</label>
+                            <input type="text" id="adminUsername" name="adminUsername" required autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label for="adminPassword">Admin Password</label>
+                            <input type="password" id="adminPassword" name="adminPassword" required autocomplete="current-password">
+                        </div>
+                        <div id="adminMessage" class="error-message"></div>
+                        <button type="submit" class="btn btn-primary">Login as Admin</button>
+                    </form>
+                </div>
+
+                <div id="registerPanel" class="form-panel">
+                    <h2>Create Account</h2>
+                    <form id="registerForm" onsubmit="handleRegistration(event)">
+                        <div class="form-group">
+                            <label for="newUsername">Username</label>
+                            <input type="text" id="newUserUsername" name="newUsername" required autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword">Password</label>
+                            <input type="password" id="newUserPassword" name="newPassword" required autocomplete="new-password">
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">Confirm Password</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
+                        </div>
+                        <div id="registerMessage" class="error-message"></div>
+                        <div id="registerSuccess" class="info-message"></div>
+                        <button type="submit" class="btn btn-primary">Create Account &amp; Login</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>

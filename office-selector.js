@@ -12,48 +12,100 @@ function getSession() {
     }
 }
 
+function getStorageNamespace() {
+    const session = getSession();
+    if (!session || session.readOnly) {
+        return 'public';
+    }
+    return session.username;
+}
+
+function getOfficesStorageKey() {
+    const namespace = getStorageNamespace();
+    return namespace === 'public'
+        ? 'medicalSupplyOffices_public'
+        : `medicalSupplyOffices_${namespace}`;
+}
+
+function getCurrentOfficeStorageKey() {
+    const namespace = getStorageNamespace();
+    return namespace === 'public'
+        ? 'currentOfficeId_public'
+        : `currentOfficeId_${namespace}`;
+}
+
 function getStoredOffices() {
-    const officesData = localStorage.getItem('medicalSupplyOffices');
+    const officesData = localStorage.getItem(getOfficesStorageKey());
     if (!officesData) {
         return null;
     }
 
     try {
-        return JSON.parse(officesData);
+        const parsed = JSON.parse(officesData);
+        return Array.isArray(parsed) ? parsed : null;
     } catch (error) {
         console.error('Failed to parse stored offices from localStorage:', error);
         return null;
     }
 }
 
-// Initialize offices from localStorage
-let offices = getStoredOffices() || [
-    { id: 'default', name: 'MVHS New Hartford Medical Office', items: [] }
-];
+let offices = [];
+
+function migrateLegacyDataIfNeeded() {
+    const namespace = getStorageNamespace();
+    const officesKey = getOfficesStorageKey();
+    const currentOfficeKey = getCurrentOfficeStorageKey();
+
+    if (!localStorage.getItem(officesKey)) {
+        if (namespace !== 'public') {
+            const legacyUserKey = `medicalSupplyOffices_${namespace}`;
+            const legacyUserData = localStorage.getItem(legacyUserKey);
+            if (legacyUserData) {
+                localStorage.setItem(officesKey, legacyUserData);
+            } else {
+                const legacySharedData = localStorage.getItem('medicalSupplyOffices');
+                const publicData = localStorage.getItem('medicalSupplyOffices_public');
+                if (legacySharedData) {
+                    localStorage.setItem(officesKey, legacySharedData);
+                } else if (publicData) {
+                    localStorage.setItem(officesKey, publicData);
+                }
+            }
+        } else {
+            const legacySharedData = localStorage.getItem('medicalSupplyOffices');
+            if (legacySharedData) {
+                localStorage.setItem(officesKey, legacySharedData);
+            }
+        }
+    }
+
+    if (!localStorage.getItem(currentOfficeKey)) {
+        const legacyCurrent = localStorage.getItem('currentOfficeId');
+        const publicCurrent = localStorage.getItem('currentOfficeId_public');
+        const fallback = legacyCurrent || publicCurrent || 'default';
+        localStorage.setItem(currentOfficeKey, fallback);
+    }
+}
+
+function ensureOfficesLoaded() {
+    migrateLegacyDataIfNeeded();
+    const stored = getStoredOffices();
+
+    if (stored && stored.length > 0) {
+        offices = stored;
+    } else {
+        offices = [createDefaultOffice()];
+        saveOffices();
+    }
+}
 
 // Save offices to localStorage
 function saveOffices() {
-    localStorage.setItem('medicalSupplyOffices', JSON.stringify(offices));
+    localStorage.setItem(getOfficesStorageKey(), JSON.stringify(offices));
 }
 
-// Add a new office
-function addOffice() {
-    const officeNameInput = document.getElementById('officeName');
-    const officeName = officeNameInput.value.trim();
-    
-    if (!officeName) {
-        alert('Please enter an office name');
-        return;
-    }
-    
-    // Check if office already exists
-    if (offices.some(office => office.name.toLowerCase() === officeName.toLowerCase())) {
-        alert('An office with this name already exists');
-        return;
-    }
-    
-    // Add new office with all medical items
-    const medicalItems = [
+function getMedicalItemsTemplate() {
+    return [
         // TABLET/CAPSULE
         { stockNumber: '4085010', name: 'ACETAMINOPHEN 325 MG TABLET/CAP', category: 'tablet-capsule', form: 'CL', packSize: '1', par: '4' },
         { stockNumber: '4085117', name: 'ASPIRIN 81 MG CHEWABLE', category: 'tablet-capsule', form: 'CW', packSize: '1', par: '4' },
@@ -147,6 +199,38 @@ function addOffice() {
         { stockNumber: '', name: 'VARICELLA-ZOSTER GSK (SHINGRIX)', category: 'vaccine', form: 'SD', packSize: '1', par: '10' },
         { stockNumber: '', name: 'COVID VACCINE', category: 'vaccine', form: 'SD', packSize: '1', par: '15' }
     ];
+}
+
+function createDefaultOffice(name = 'MVHS New Hartford Medical Office') {
+    return {
+        id: 'default',
+        name,
+        items: getMedicalItemsTemplate().map(item => ({
+            ...item,
+            expirationDates: [],
+            id: generateId()
+        }))
+    };
+}
+
+// Add a new office
+function addOffice() {
+    const officeNameInput = document.getElementById('officeName');
+    const officeName = officeNameInput.value.trim();
+    
+    if (!officeName) {
+        alert('Please enter an office name');
+        return;
+    }
+    
+    // Check if office already exists
+    if (offices.some(office => office.name.toLowerCase() === officeName.toLowerCase())) {
+        alert('An office with this name already exists');
+        return;
+    }
+    
+    // Add new office with all medical items
+    const medicalItems = getMedicalItemsTemplate();
 
     const newOffice = {
         id: generateOfficeId(),
@@ -190,7 +274,7 @@ function removeOffice(officeId) {
 
 // Navigate to office tracking page
 function goToOffice(officeId) {
-    localStorage.setItem('currentOfficeId', officeId);
+    localStorage.setItem(getCurrentOfficeStorageKey(), officeId);
     window.location.href = 'index.html';
 }
 
@@ -307,9 +391,10 @@ function initializeOfficeSelector() {
     // Check authentication first
     const session = checkAuth();
     if (!session) return;
-    
+
+    ensureOfficesLoaded();
     renderOffices();
-    
+
     // Add event listener for Enter key in office name input
     document.getElementById('officeName').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
