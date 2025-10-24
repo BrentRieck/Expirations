@@ -1,3 +1,6 @@
+const API_BASE = '/api';
+let currentSession = null;
+
 function getSession() {
     const sessionData = localStorage.getItem('userSession');
     if (!sessionData) {
@@ -9,20 +12,6 @@ function getSession() {
     } catch (error) {
         console.error('Failed to parse user session from localStorage:', error);
         return null;
-    }
-}
-
-function getStoredUsers() {
-    const usersData = localStorage.getItem('appUsers');
-    if (!usersData) {
-        return [];
-    }
-
-    try {
-        return JSON.parse(usersData);
-    } catch (error) {
-        console.error('Failed to parse stored users from localStorage:', error);
-        return [];
     }
 }
 
@@ -39,180 +28,210 @@ function removeUserData(username) {
     localStorage.removeItem(getUserCurrentOfficeKey(username));
 }
 
-// Check authentication and ensure user is admin
+function countAdmins(users) {
+    return users.filter(user => user.role === 'admin').length;
+}
+
 function checkAuth() {
     const session = getSession();
 
     if (!session || !session.loggedIn) {
-        // No session, redirect to login
         window.location.href = 'login.html';
         return false;
     }
-    
+
     if (session.role !== 'admin') {
-        // Not admin, redirect to office selector
         window.location.href = 'office-selector.html';
         return false;
     }
-    
-    // Update user info
-    document.getElementById('userInfo').textContent = `Logged in as: ${session.username} (${session.role})`;
-    
+
+    const userInfo = document.getElementById('userInfo');
+    if (userInfo) {
+        userInfo.textContent = `Logged in as: ${session.username} (${session.role})`;
+    }
+
     return session;
 }
 
-// Logout function
 function logout() {
     localStorage.removeItem('userSession');
     window.location.href = 'login.html';
 }
 
-// Navigate to office selector
 function goToOfficeSelector() {
     window.location.href = 'office-selector.html';
 }
 
-// Add a new user
-function addUser() {
+async function apiRequest(endpoint, options = {}) {
+    const config = { ...options };
+    const headers = { ...(options.headers || {}) };
+    if (!headers['Content-Type'] && config.body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+    }
+    config.headers = headers;
+
+    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : null;
+
+    if (!response.ok) {
+        const errorMessage = payload && payload.error ? payload.error : 'An unexpected error occurred. Please try again.';
+        throw new Error(errorMessage);
+    }
+
+    return payload;
+}
+
+function showMessage(message, type) {
+    const messageElement = document.getElementById('userMessage');
+    if (!messageElement) {
+        return;
+    }
+
+    messageElement.textContent = message;
+    messageElement.style.display = 'block';
+
+    if (type === 'error') {
+        messageElement.classList.remove('message-success');
+        messageElement.classList.add('message-error');
+    } else {
+        messageElement.classList.remove('message-error');
+        messageElement.classList.add('message-success');
+    }
+}
+
+function hideMessage() {
+    const messageElement = document.getElementById('userMessage');
+    if (messageElement) {
+        messageElement.style.display = 'none';
+        messageElement.textContent = '';
+        messageElement.classList.remove('message-error', 'message-success');
+    }
+}
+
+async function addUser() {
     const username = document.getElementById('newUsername').value.trim();
     const password = document.getElementById('newPassword').value;
     const role = document.getElementById('userRole').value;
-    const messageElement = document.getElementById('userMessage');
-    
-    // Clear previous messages
-    messageElement.style.display = 'none';
-    
-    // Validate input
+
+    hideMessage();
+
     if (!username || !password) {
         showMessage('Please fill in all fields', 'error');
         return;
     }
-    
+
     if (password.length < 6) {
         showMessage('Password must be at least 6 characters long', 'error');
         return;
     }
-    
-    // Get existing users
-    let users = getStoredUsers();
-    
-    // Check if user already exists
-    if (users.some(user => user.username.toLowerCase() === username.toLowerCase())) {
-        showMessage('A user with this username already exists', 'error');
-        return;
+
+    try {
+        await apiRequest('/users', {
+            method: 'POST',
+            body: JSON.stringify({ username, password, role })
+        });
+
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newPassword').value = '';
+
+        showMessage(`User "${username}" added successfully`, 'success');
+        await renderUsers();
+    } catch (error) {
+        showMessage(error.message, 'error');
     }
-
-    // Reset any previous stored data for this username
-    removeUserData(username);
-
-    // Add new user
-    const newUser = {
-        username: username,
-        password: password,
-        role: role,
-        createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    saveUsers(users);
-
-    // Clear form
-    document.getElementById('newUsername').value = '';
-    document.getElementById('newPassword').value = '';
-
-    // Show success message
-    showMessage(`User "${username}" added successfully`, 'success');
-    
-    // Refresh user list
-    renderUsers();
 }
 
-// Remove a user
-function removeUser(username) {
+async function removeUser(username) {
     if (username === 'admin') {
         showMessage('Cannot remove the admin account', 'error');
         return;
     }
-    
-    if (confirm(`Are you sure you want to remove user "${username}"?`)) {
-        // Get existing users
-        let users = getStoredUsers();
 
-        // Remove user
-        users = users.filter(user => user.username !== username);
-        localStorage.setItem('appUsers', JSON.stringify(users));
+    if (!confirm(`Are you sure you want to remove user "${username}"?`)) {
+        return;
+    }
 
-        // Remove user-specific data
+    try {
+        await apiRequest(`/users/${encodeURIComponent(username)}`, {
+            method: 'DELETE'
+        });
+
         removeUserData(username);
-
-        // Refresh user list
-        renderUsers();
+        showMessage(`User "${username}" has been removed`, 'success');
+        await renderUsers();
+    } catch (error) {
+        showMessage(error.message, 'error');
     }
 }
 
-function toggleUserRole(username) {
-    const users = getStoredUsers();
-    const user = users.find(user => user.username === username);
+async function toggleUserRole(username) {
+    try {
+        const users = await apiRequest('/users');
+        const user = users.find(u => u.username === username);
 
-    if (!user) {
-        showMessage(`User "${username}" was not found`, 'error');
-        return;
-    }
-
-    if (username === 'admin') {
-        showMessage('The default admin account must remain an administrator', 'error');
-        return;
-    }
-
-    const targetRole = user.role === 'admin' ? 'user' : 'admin';
-
-    if (user.role === 'admin') {
-        const adminCount = countAdmins(users);
-        if (adminCount <= 1) {
-            showMessage('At least one administrator account is required', 'error');
+        if (!user) {
+            showMessage(`User "${username}" was not found`, 'error');
             return;
         }
 
-        if (currentSession && currentSession.username === username) {
-            showMessage('You cannot demote the account that is currently signed in', 'error');
+        if (username === 'admin') {
+            showMessage('The default admin account must remain an administrator', 'error');
             return;
         }
-    }
 
-    user.role = targetRole;
-    saveUsers(users);
-    showMessage(`User "${username}" is now assigned the ${targetRole} role`, 'success');
-    renderUsers();
-}
+        if (user.role === 'admin') {
+            const adminCount = countAdmins(users);
+            if (adminCount <= 1) {
+                showMessage('At least one administrator account is required', 'error');
+                return;
+            }
 
-function resetUserPassword(username) {
-    const users = getStoredUsers();
-    const user = users.find(user => user.username === username);
+            if (currentSession && currentSession.username === username) {
+                showMessage('You cannot demote the account that is currently signed in', 'error');
+                return;
+            }
+        }
 
-    if (!user) {
-        showMessage(`User "${username}" was not found`, 'error');
-        return;
-    }
+        const targetRole = user.role === 'admin' ? 'user' : 'admin';
 
-    const newPassword = generateSecurePassword();
-    user.password = newPassword;
-    saveUsers(users);
-    renderUsers();
+        await apiRequest(`/users/${encodeURIComponent(username)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role: targetRole })
+        });
 
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(newPassword)
-            .then(() => {
-                showMessage(`New password for "${username}": ${newPassword} (copied to clipboard)`, 'success');
-            })
-            .catch(() => {
-                showMessage(`New password for "${username}": ${newPassword}`, 'success');
-            });
-    } else {
-        showMessage(`New password for "${username}": ${newPassword}`, 'success');
+        showMessage(`User "${username}" is now assigned the ${targetRole} role`, 'success');
+        await renderUsers();
+    } catch (error) {
+        showMessage(error.message, 'error');
     }
 }
 
-function updateOwnPassword() {
+async function resetUserPassword(username) {
+    try {
+        const result = await apiRequest(`/users/${encodeURIComponent(username)}/reset-password`, {
+            method: 'POST'
+        });
+
+        await renderUsers();
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            try {
+                await navigator.clipboard.writeText(result.newPassword);
+                showMessage(`New password for "${username}": ${result.newPassword} (copied to clipboard)`, 'success');
+                return;
+            } catch (error) {
+                console.warn('Failed to copy to clipboard:', error);
+            }
+        }
+
+        showMessage(`New password for "${username}": ${result.newPassword}`, 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+}
+
+async function updateOwnPassword() {
     if (!currentSession) {
         showMessage('Your session has expired. Please sign in again.', 'error');
         return;
@@ -236,103 +255,102 @@ function updateOwnPassword() {
         return;
     }
 
-    const users = getStoredUsers();
-    const user = users.find(user => user.username === currentSession.username);
+    try {
+        await apiRequest(`/users/${encodeURIComponent(currentSession.username)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ password: newPassword })
+        });
 
-    if (!user) {
-        showMessage('Unable to locate the current user account. Please sign in again.', 'error');
+        document.getElementById('adminNewPassword').value = '';
+        document.getElementById('adminConfirmPassword').value = '';
+
+        showMessage('Your password has been updated successfully', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+}
+
+async function renderUsers() {
+    const container = document.getElementById('usersContainer');
+    if (!container) {
         return;
     }
 
-    user.password = newPassword;
-    saveUsers(users);
-
-    document.getElementById('adminNewPassword').value = '';
-    document.getElementById('adminConfirmPassword').value = '';
-
-    showMessage('Your password has been updated successfully', 'success');
-}
-
-// Show message
-function showMessage(message, type) {
-    const messageElement = document.getElementById('userMessage');
-    messageElement.textContent = message;
-    messageElement.style.display = 'block';
-    
-    if (type === 'error') {
-        messageElement.style.background = '#f8d7da';
-        messageElement.style.color = '#721c24';
-        messageElement.style.borderColor = '#f5c6cb';
-    } else {
-        messageElement.style.background = '#d4edda';
-        messageElement.style.color = '#155724';
-        messageElement.style.borderColor = '#c3e6cb';
-    }
-}
-
-// Render users
-function renderUsers() {
-    const container = document.getElementById('usersContainer');
     container.innerHTML = '';
 
-    // Get users
-    const users = getStoredUsers();
-    
-    if (users.length === 0) {
+    try {
+        const users = await apiRequest('/users');
+
+        if (!users || users.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">👥</div>
+                    <h3>No users found</h3>
+                    <p>Add your first user account</p>
+                </div>
+            `;
+            return;
+        }
+
+        users.forEach(user => {
+            const userCard = document.createElement('div');
+            userCard.className = 'user-card';
+            userCard.innerHTML = `
+                <div class="item-header">
+                    <div class="item-name">${user.username}</div>
+                    <span class="status-badge ${user.role === 'admin' ? 'badge-admin' : 'badge-user'}">
+                        ${user.role === 'admin' ? 'Admin' : 'User'}
+                    </span>
+                </div>
+                <div class="item-details">
+                    <div class="item-detail">
+                        <label>Role:</label>
+                        <span>${user.role}</span>
+                    </div>
+                    <div class="item-detail">
+                        <label>Created:</label>
+                        <span>${user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown'}</span>
+                    </div>
+                </div>
+                <div class="user-actions">
+                    ${user.username !== 'admin'
+                        ? `<button class="btn btn-secondary btn-small" onclick="toggleUserRole('${user.username}')">${user.role === 'admin' ? '⬇️ Demote to User' : '⬆️ Promote to Admin'}</button>`
+                        : `<button class="btn btn-secondary btn-small" disabled>Admin Role Locked</button>`}
+                    <button class="btn btn-primary btn-small" onclick="resetUserPassword('${user.username}')">🔐 Reset Password</button>
+                    ${user.username !== 'admin'
+                        ? `<button class="btn btn-danger btn-small" onclick="removeUser('${user.username}')">🗑️ Remove</button>`
+                        : `<button class="btn btn-secondary btn-small" disabled>Protected Account</button>`}
+                </div>
+            `;
+            container.appendChild(userCard);
+        });
+    } catch (error) {
+        console.error('Failed to load users:', error);
         container.innerHTML = `
-            <div class="empty-state">
-                <div style="font-size: 4em; margin-bottom: 20px;">👥</div>
-                <h3>No users found</h3>
-                <p>Add your first user account</p>
+            <div class="empty-state error">
+                <div class="empty-icon">⚠️</div>
+                <h3>Unable to load users</h3>
+                <p>${error.message}</p>
             </div>
         `;
+        showMessage(error.message, 'error');
+    }
+}
+
+async function initializeUserManagement() {
+    const session = checkAuth();
+    if (!session) {
         return;
     }
-    
-    // Render each user
-    users.forEach(user => {
-        const userCard = document.createElement('div');
-        userCard.className = 'user-card';
-        userCard.innerHTML = `
-            <div class="item-header">
-                <div class="item-name">${user.username}</div>
-                <span class="status-badge ${user.role === 'admin' ? 'expired' : 'good'}">
-                    ${user.role === 'admin' ? 'Admin' : 'User'}
-                </span>
-            </div>
-            <div class="item-details">
-                <div class="item-detail">
-                    <label>Role:</label>
-                    <span>${user.role}</span>
-                </div>
-                <div class="item-detail">
-                    <label>Created:</label>
-                    <span>${new Date(user.createdAt).toLocaleDateString()}</span>
-                </div>
-            </div>
-            <div class="user-actions">
-                ${user.username !== 'admin' ?
-                    `<button class="btn btn-secondary btn-small" onclick="toggleUserRole('${user.username}')">${user.role === 'admin' ? '⬇️ Demote to User' : '⬆️ Promote to Admin'}</button>` :
-                    `<button class="btn btn-secondary btn-small" disabled>Admin Role Locked</button>`}
-                <button class="btn btn-primary btn-small" onclick="resetUserPassword('${user.username}')">🔐 Reset Password</button>
-                ${user.username !== 'admin' ?
-                    `<button class="btn btn-danger btn-small" onclick="removeUser('${user.username}')">🗑️ Remove</button>` :
-                    `<button class="btn btn-secondary btn-small" disabled>Protected Account</button>`}
-            </div>
-        `;
-        container.appendChild(userCard);
-    });
-}
-
-// Initialize the user management page
-function initializeUserManagement() {
-    // Check authentication first
-    const session = checkAuth();
-    if (!session) return;
 
     currentSession = session;
-    renderUsers();
+    hideMessage();
+    await renderUsers();
 }
 
-// Run initialization when page loads
-document.addEventListener('DOMContentLoaded', initializeUserManagement);
+document.addEventListener('DOMContentLoaded', () => {
+    initializeUserManagement().catch(error => {
+        console.error('Failed to initialize user management:', error);
+        showMessage('Unable to initialize the user management console. Please refresh the page.', 'error');
+    });
+});

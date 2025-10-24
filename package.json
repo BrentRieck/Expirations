@@ -1,0 +1,12 @@
+{
+  "name": "medical-supply-tracker",
+  "version": "1.0.0",
+  "description": "Medical supply expiration tracker with shared user management backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
