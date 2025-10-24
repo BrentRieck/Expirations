@@ -115,6 +115,64 @@ let currentSearch = '';
 let currentOffice = null;
 let offices = [];
 
+function getStorageNamespace() {
+    const session = getSession();
+    if (!session || session.readOnly) {
+        return 'public';
+    }
+    return session.username;
+}
+
+function getOfficesStorageKey() {
+    const namespace = getStorageNamespace();
+    return namespace === 'public'
+        ? 'medicalSupplyOffices_public'
+        : `medicalSupplyOffices_${namespace}`;
+}
+
+function getCurrentOfficeStorageKey() {
+    const namespace = getStorageNamespace();
+    return namespace === 'public'
+        ? 'currentOfficeId_public'
+        : `currentOfficeId_${namespace}`;
+}
+
+function migrateLegacyDataIfNeeded() {
+    const namespace = getStorageNamespace();
+    const officesKey = getOfficesStorageKey();
+    const currentOfficeKey = getCurrentOfficeStorageKey();
+
+    if (!localStorage.getItem(officesKey)) {
+        if (namespace !== 'public') {
+            const legacyUserKey = `medicalSupplyOffices_${namespace}`;
+            const legacyUserData = localStorage.getItem(legacyUserKey);
+            if (legacyUserData) {
+                localStorage.setItem(officesKey, legacyUserData);
+            } else {
+                const legacySharedData = localStorage.getItem('medicalSupplyOffices');
+                const publicData = localStorage.getItem('medicalSupplyOffices_public');
+                if (legacySharedData) {
+                    localStorage.setItem(officesKey, legacySharedData);
+                } else if (publicData) {
+                    localStorage.setItem(officesKey, publicData);
+                }
+            }
+        } else {
+            const legacySharedData = localStorage.getItem('medicalSupplyOffices');
+            if (legacySharedData) {
+                localStorage.setItem(officesKey, legacySharedData);
+            }
+        }
+    }
+
+    if (!localStorage.getItem(currentOfficeKey)) {
+        const legacyCurrent = localStorage.getItem('currentOfficeId');
+        const publicCurrent = localStorage.getItem('currentOfficeId_public');
+        const fallback = legacyCurrent || publicCurrent || 'default';
+        localStorage.setItem(currentOfficeKey, fallback);
+    }
+}
+
 function getSession() {
     const sessionData = localStorage.getItem('userSession');
     if (!sessionData) {
@@ -164,56 +222,51 @@ function goToOfficeSelector() {
 
 // Load offices from localStorage
 function loadOffices() {
-    const savedOffices = localStorage.getItem('medicalSupplyOffices');
+    migrateLegacyDataIfNeeded();
+    const savedOffices = localStorage.getItem(getOfficesStorageKey());
     if (savedOffices) {
-        offices = JSON.parse(savedOffices);
-    } else {
-        // Initialize with default office
-        offices = [
-            { 
-                id: 'default', 
-                name: 'MVHS New Hartford Medical Office', 
-                items: medicalItems.map(item => ({
-                    ...item,
-                    expirationDates: [],
-                    id: generateId()
-                }))
+        try {
+            const parsed = JSON.parse(savedOffices);
+            if (Array.isArray(parsed)) {
+                offices = parsed;
+                return;
             }
-        ];
-        saveOffices();
+        } catch (error) {
+            console.error('Failed to parse offices from localStorage:', error);
+        }
     }
+
+    offices = [createDefaultOffice()];
+    saveOffices();
 }
 
 // Save offices to localStorage
 function saveOffices() {
-    localStorage.setItem('medicalSupplyOffices', JSON.stringify(offices));
+    localStorage.setItem(getOfficesStorageKey(), JSON.stringify(offices));
 }
 
 // Load data for current office
 function loadOfficeData() {
-    const currentOfficeId = localStorage.getItem('currentOfficeId') || 'default';
-    
+    const currentOfficeKey = getCurrentOfficeStorageKey();
+    let currentOfficeId = localStorage.getItem(currentOfficeKey);
+    if (!currentOfficeId) {
+        currentOfficeId = 'default';
+        localStorage.setItem(currentOfficeKey, currentOfficeId);
+    }
+
     // Find the current office
     currentOffice = offices.find(office => office.id === currentOfficeId);
-    
+
     if (!currentOffice) {
         // If office not found, use default
         currentOffice = offices.find(office => office.id === 'default');
         if (!currentOffice) {
             // If no default office, create one
-            currentOffice = {
-                id: 'default',
-                name: 'MVHS New Hartford Medical Office',
-                items: medicalItems.map(item => ({
-                    ...item,
-                    expirationDates: [],
-                    id: generateId()
-                }))
-            };
+            currentOffice = createDefaultOffice();
             offices.push(currentOffice);
             saveOffices();
         }
-        localStorage.setItem('currentOfficeId', currentOffice.id);
+        localStorage.setItem(currentOfficeKey, currentOffice.id);
     }
     
     // Migrate old item names to new ones
@@ -236,6 +289,18 @@ function loadOfficeData() {
 // Generate unique ID
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+function createDefaultOffice() {
+    return {
+        id: 'default',
+        name: 'MVHS New Hartford Medical Office',
+        items: medicalItems.map(item => ({
+            ...item,
+            expirationDates: [],
+            id: generateId()
+        }))
+    };
 }
 
 // Save data to localStorage
@@ -449,7 +514,7 @@ function renderItems() {
                 <div class="add-expiration-section" id="add-section-${item.id}">
                     <div class="expiration-input-container">
                         <input type="date" class="expiration-input" id="exp-input-${item.id}">
-                        <button class="btn btn-secondary btn-small scan-btn" onclick="scanQRCode('${item.id}')">📷 Scan</button>
+                        <button class="btn btn-secondary btn-small voice-btn" onclick="startVoiceCapture('${item.id}')">🎤 Speak Date</button>
                     </div>
                     <button class="btn btn-primary btn-small" onclick="addExpirationDate('${item.id}')">➕ Add Expiration Date</button>
                 </div>
@@ -548,187 +613,482 @@ function removeExpirationDate(itemId, index) {
     }
 }
 
-// QR Code scanning functionality
-function scanQRCode(itemId) {
+let activeVoiceRecognition = null;
+let speechRecognitionCtor = null;
+
+// Launch voice capture modal to recognize spoken expiration dates
+function startVoiceCapture(itemId) {
     const session = getSession();
     if (session && session.readOnly) {
-        alert('You do not have permission to scan QR codes. Please login to use this feature.');
+        alert('You do not have permission to add expiration dates. Please login with an admin account.');
         return;
     }
-    
-    // Check if browser supports media devices
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert('Your browser does not support camera access. Please try a different browser.');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert('Your browser does not support speech recognition. Please try a different browser.');
         return;
     }
-    
-    // Create modal for QR scanning
+
+    speechRecognitionCtor = SpeechRecognition;
+
+    closeVoiceCapture();
+
     const modal = document.createElement('div');
-    modal.id = 'qrScannerModal';
-    modal.className = 'qr-scanner-modal';
+    modal.id = 'voiceCaptureModal';
+    modal.dataset.itemId = itemId;
+    modal.className = 'voice-capture-modal';
     modal.innerHTML = `
-        <div class="qr-scanner-content">
-            <div class="qr-scanner-header">
-                <h2>Scan QR Code</h2>
-                <button class="btn btn-danger btn-small" onclick="closeQRScanner()">✕</button>
+        <div class="voice-capture-content">
+            <div class="voice-capture-header">
+                <h2>Speak Expiration Date</h2>
+                <button class="btn btn-danger btn-small" onclick="closeVoiceCapture()">✕</button>
             </div>
-            <div class="qr-scanner-body">
-                <video id="qrVideo" playsinline style="width: 100%; max-width: 400px; border: 2px solid #dee2e6; border-radius: 8px;"></video>
-                <canvas id="qrCanvas" style="display: none;"></canvas>
-                <div class="qr-scanner-instructions">
-                    <p>Point your camera at the QR code on the medical supply item</p>
+            <div class="voice-capture-body">
+                <p id="voiceStatus" class="voice-status">Listening for an expiration date...</p>
+                <div id="voiceResult" class="voice-result"></div>
+                <div class="voice-instructions">
+                    Speak clearly, for example: <strong>"January 15 2025"</strong> or <strong>"12/15/2025"</strong>.
                 </div>
-                <div id="qrResult" class="qr-result"></div>
+                <div class="voice-actions">
+                    <button class="btn btn-secondary btn-small" onclick="restartVoiceCapture()">🔁 Try Again</button>
+                    <button class="btn btn-secondary btn-small" onclick="closeVoiceCapture()">✕ Cancel</button>
+                </div>
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
-    // Get video stream
-    const video = document.getElementById('qrVideo');
-    const canvas = document.getElementById('qrCanvas');
-    const ctx = canvas.getContext('2d');
-    
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-        .then(stream => {
-            video.srcObject = stream;
-            video.play();
-            
-            // Start scanning
-            scanFrame(itemId, video, canvas, ctx);
-        })
-        .catch(err => {
-            console.error("Camera access error:", err);
-            alert('Could not access the camera. Please ensure you have granted camera permissions.');
-            closeQRScanner();
+
+    beginSpeechRecognition(itemId, modal);
+}
+
+function beginSpeechRecognition(itemId, modal) {
+    const SpeechRecognition = speechRecognitionCtor;
+    if (!SpeechRecognition) {
+        return;
+    }
+
+    const statusEl = modal.querySelector('#voiceStatus');
+    const resultEl = modal.querySelector('#voiceResult');
+
+    if (activeVoiceRecognition) {
+        activeVoiceRecognition.onresult = null;
+        activeVoiceRecognition.onerror = null;
+        activeVoiceRecognition.onend = null;
+        activeVoiceRecognition.stop();
+    }
+
+    resultEl.innerHTML = '';
+    statusEl.textContent = 'Listening for an expiration date...';
+    modal.dataset.completed = '';
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    activeVoiceRecognition = recognition;
+
+    recognition.onresult = event => {
+        const transcript = Array.from(event.results)
+            .map(result => result[0].transcript)
+            .join(' ')
+            .trim();
+
+        const parsedDate = parseSpokenDate(transcript);
+
+        if (parsedDate) {
+            const isoDate = formatDateForInput(parsedDate);
+            const displayDate = parsedDate.toLocaleDateString();
+
+            modal.dataset.completed = 'true';
+            statusEl.textContent = 'Date recognized successfully!';
+            resultEl.innerHTML = `
+                <div class="voice-success">
+                    <p>🗓️ <strong>Heard:</strong> ${transcript}</p>
+                    <p><strong>Expiration Date:</strong> ${displayDate}</p>
+                    <button class="btn btn-primary" onclick="useRecognizedDate('${itemId}', '${isoDate}')">Use This Date</button>
+                </div>
+            `;
+        } else {
+            statusEl.textContent = 'We could not understand a valid date. Try again.';
+            resultEl.innerHTML = `
+                <div class="voice-error">
+                    <p>🔈 <strong>Heard:</strong> ${transcript || 'No speech detected.'}</p>
+                    <p>Please repeat the expiration date clearly.</p>
+                </div>
+            `;
+        }
+    };
+
+    recognition.onerror = event => {
+        let message = 'An error occurred during speech recognition.';
+        if (event.error === 'not-allowed') {
+            message = 'Microphone access was denied. Please allow microphone permissions and try again.';
+        } else if (event.error === 'no-speech') {
+            message = 'No speech detected. Please try speaking closer to the microphone.';
+        } else if (event.error === 'audio-capture') {
+            message = 'No microphone was found. Please connect a microphone and try again.';
+        }
+        statusEl.textContent = message;
+    };
+
+    recognition.onend = () => {
+        if (!modal.dataset.completed) {
+            statusEl.textContent = 'Tap "Try Again" to repeat the capture.';
+        }
+    };
+
+    try {
+        recognition.start();
+    } catch (error) {
+        console.error('Speech recognition error:', error);
+        statusEl.textContent = 'Unable to start speech recognition. Please try again.';
+    }
+}
+
+function restartVoiceCapture() {
+    const modal = document.getElementById('voiceCaptureModal');
+    if (!modal) {
+        return;
+    }
+    const itemId = modal.dataset.itemId;
+    beginSpeechRecognition(itemId, modal);
+}
+
+function parseSpokenDate(transcript) {
+    if (!transcript) {
+        return null;
+    }
+
+    let cleaned = transcript
+        .toLowerCase()
+        .replace(/(\d+)(st|nd|rd|th)/g, '$1')
+        .replace(/-/g, ' ')
+        .replace(/[,]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const directDate = new Date(cleaned);
+    if (!isNaN(directDate.getTime())) {
+        return directDate;
+    }
+
+    const numericMatch = cleaned.match(/(\d{1,2})[\/ ](\d{1,2})[\/ ](\d{2,4})/);
+    if (numericMatch) {
+        const month = parseInt(numericMatch[1], 10) - 1;
+        const day = parseInt(numericMatch[2], 10);
+        let year = parseInt(numericMatch[3], 10);
+        if (year < 100) {
+            const currentYear = new Date().getFullYear();
+            const century = Math.floor(currentYear / 100) * 100;
+            year += century;
+        }
+        const numericDate = new Date(year, month, day);
+        if (!isNaN(numericDate.getTime())) {
+            return numericDate;
+        }
+    }
+
+    const monthNames = {
+        january: 0,
+        february: 1,
+        march: 2,
+        april: 3,
+        may: 4,
+        june: 5,
+        july: 6,
+        august: 7,
+        september: 8,
+        october: 9,
+        november: 10,
+        december: 11
+    };
+
+    const ordinalMap = {
+        'first': '1',
+        'second': '2',
+        'third': '3',
+        'fourth': '4',
+        'fifth': '5',
+        'sixth': '6',
+        'seventh': '7',
+        'eighth': '8',
+        'ninth': '9',
+        'tenth': '10',
+        'eleventh': '11',
+        'twelfth': '12',
+        'thirteenth': '13',
+        'fourteenth': '14',
+        'fifteenth': '15',
+        'sixteenth': '16',
+        'seventeenth': '17',
+        'eighteenth': '18',
+        'nineteenth': '19',
+        'twentieth': '20',
+        'twenty first': '21',
+        'twenty second': '22',
+        'twenty third': '23',
+        'twenty fourth': '24',
+        'twenty fifth': '25',
+        'twenty sixth': '26',
+        'twenty seventh': '27',
+        'twenty eighth': '28',
+        'twenty ninth': '29',
+        'thirtieth': '30',
+        'thirty first': '31'
+    };
+
+    Object.keys(ordinalMap)
+        .sort((a, b) => b.length - a.length)
+        .forEach(key => {
+            const pattern = key.split(' ').filter(Boolean).join('\\s+');
+            const regex = new RegExp(`\\b${pattern}\\b`, 'g');
+            cleaned = cleaned.replace(regex, ordinalMap[key]);
         });
-}
 
-// Scan frame for QR code
-function scanFrame(itemId, video, canvas, ctx) {
-    if (document.getElementById('qrScannerModal')) {
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            // Set canvas dimensions to match video
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            // Draw video frame to canvas
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Get image data from canvas
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            // Try to decode QR code
-            let code = null;
-            if (typeof jsQR !== 'undefined') {
-                code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: "dontInvert",
-                });
-            } else {
-                console.error('jsQR library not loaded');
-            }
-            
-            if (code) {
-                // Successfully decoded QR code
-                console.log('QR Code detected:', code.data);
-                
-                // Try to extract expiration date from QR code content
-                const expirationDate = extractExpirationDate(code.data);
-                
-                if (expirationDate) {
-                    document.getElementById('qrResult').innerHTML = `
-                        <div class="scan-success">
-                            <p>✅ QR Code Scanned Successfully!</p>
-                            <p><strong>Expiration Date:</strong> ${expirationDate}</p>
-                            <button class="btn btn-primary" onclick="useScannedDate('${itemId}', '${expirationDate}')">Use This Date</button>
-                            <button class="btn btn-secondary" onclick="closeQRScanner()">Cancel</button>
-                        </div>
-                    `;
-                    return; // Stop scanning
-                } else {
-                    document.getElementById('qrResult').innerHTML = `
-                        <div class="scan-error">
-                            <p>⚠️ QR Code Scanned!</p>
-                            <p><strong>Content:</strong> ${code.data}</p>
-                            <p>Could not extract expiration date from QR code.</p>
-                            <p>Please enter the date manually or scan a different code.</p>
-                            <button class="btn btn-secondary" onclick="closeQRScanner()">Close</button>
-                        </div>
-                    `;
-                    return; // Stop scanning
-                }
-            }
-        }
-        
-        // Continue scanning if modal is still open
-        setTimeout(() => scanFrame(itemId, video, canvas, ctx), 100);
+    const tokens = cleaned.split(' ');
+    const monthIndex = tokens.findIndex(token => monthNames.hasOwnProperty(token));
+    if (monthIndex === -1) {
+        return null;
     }
+
+    const month = monthNames[tokens[monthIndex]];
+    const dayTokens = collectNumberTokens(tokens, monthIndex + 1);
+    if (!dayTokens.value || dayTokens.value < 1 || dayTokens.value > 31) {
+        return null;
+    }
+
+    const yearTokens = collectNumberTokens(tokens, dayTokens.nextIndex);
+    let year = normalizeYear(yearTokens.tokens || [], yearTokens.value);
+    if (!year) {
+        year = new Date().getFullYear();
+    } else if (year < 100) {
+        const currentYear = new Date().getFullYear();
+        const century = Math.floor(currentYear / 100) * 100;
+        year += century;
+    }
+
+    const date = new Date(year, month, dayTokens.value);
+    if (isNaN(date.getTime())) {
+        return null;
+    }
+
+    return date;
 }
 
-// Extract expiration date from QR code content
-function extractExpirationDate(qrContent) {
-    // This function attempts to extract an expiration date from QR code content
-    // In a real implementation, this would depend on the format of QR codes used by the medical supplies
-    
-    // Try common date formats
-    const datePatterns = [
-        /expir(ation|y)\s*date[:\s]*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
-        /([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
-        /([0-9]{4}[\/\-][0-9]{1,2}[\/\-][0-9]{1,2})/i
-    ];
-    
-    for (const pattern of datePatterns) {
-        const match = qrContent.match(pattern);
-        if (match) {
-            let dateStr = match[2] || match[1];
-            
-            // Try to parse the date
-            let date = new Date(dateStr);
-            if (isNaN(date.getTime())) {
-                // Try different date formats
-                const parts = dateStr.split(/[-\/]/);
-                if (parts.length === 3) {
-                    // Try MM/DD/YYYY format
-                    date = new Date(parts[2], parts[0] - 1, parts[1]);
-                    if (isNaN(date.getTime())) {
-                        // Try YYYY-MM-DD format
-                        date = new Date(parts[0], parts[1] - 1, parts[2]);
-                    }
-                }
-            }
-            
-            if (!isNaN(date.getTime())) {
-                // Format as YYYY-MM-DD for input field
-                return date.toISOString().split('T')[0];
-            }
+function collectNumberTokens(tokens, startIndex) {
+    const usableTokens = [];
+    let index = startIndex;
+
+    while (index < tokens.length) {
+        const token = tokens[index];
+        if (!token) {
+            index += 1;
+            continue;
+        }
+
+        if (/^\d+$/.test(token) || isNumberWord(token)) {
+            usableTokens.push(token);
+            index += 1;
+        } else if (token === 'and' || token === 'of') {
+            index += 1;
+        } else {
+            break;
         }
     }
-    
-    return null;
+
+    if (usableTokens.length === 0) {
+        return { value: null, nextIndex: index, tokens: [] };
+    }
+
+    return {
+        value: spokenTokensToNumber(usableTokens),
+        nextIndex: index,
+        tokens: usableTokens
+    };
 }
 
-// Use scanned date
-function useScannedDate(itemId, date) {
+function isNumberWord(token) {
+    const numbers = {
+        zero: 0,
+        one: 1,
+        two: 2,
+        three: 3,
+        four: 4,
+        five: 5,
+        six: 6,
+        seven: 7,
+        eight: 8,
+        nine: 9,
+        ten: 10,
+        eleven: 11,
+        twelve: 12,
+        thirteen: 13,
+        fourteen: 14,
+        fifteen: 15,
+        sixteen: 16,
+        seventeen: 17,
+        eighteen: 18,
+        nineteen: 19,
+        twenty: 20,
+        thirty: 30,
+        forty: 40,
+        fifty: 50,
+        sixty: 60,
+        seventy: 70,
+        eighty: 80,
+        ninety: 90,
+        hundred: 100,
+        thousand: 1000,
+        oh: 0
+    };
+    return numbers.hasOwnProperty(token);
+}
+
+function spokenTokensToNumber(tokens) {
+    const numberMap = {
+        zero: 0,
+        one: 1,
+        two: 2,
+        three: 3,
+        four: 4,
+        five: 5,
+        six: 6,
+        seven: 7,
+        eight: 8,
+        nine: 9,
+        ten: 10,
+        eleven: 11,
+        twelve: 12,
+        thirteen: 13,
+        fourteen: 14,
+        fifteen: 15,
+        sixteen: 16,
+        seventeen: 17,
+        eighteen: 18,
+        nineteen: 19,
+        twenty: 20,
+        thirty: 30,
+        forty: 40,
+        fifty: 50,
+        sixty: 60,
+        seventy: 70,
+        eighty: 80,
+        ninety: 90,
+        hundred: 100,
+        thousand: 1000,
+        oh: 0
+    };
+
+    const digitsOnly = tokens.every(token => /^\d+$/.test(token));
+    if (digitsOnly) {
+        return parseInt(tokens.join(''), 10);
+    }
+
+    let total = 0;
+    let current = 0;
+    let found = false;
+
+    const normalizedTokens = tokens.map(token => token.replace(/\s+/g, ''));
+
+    for (let i = 0; i < normalizedTokens.length; i++) {
+        const token = normalizedTokens[i];
+        if (token === 'and') {
+            continue;
+        }
+
+        if (/^\d+$/.test(token)) {
+            current = current * 10 + parseInt(token, 10);
+            found = true;
+            continue;
+        }
+
+        const value = numberMap[token];
+        if (value === undefined) {
+            continue;
+        }
+
+        found = true;
+
+        if (value === 100 || value === 1000) {
+            if (current === 0) {
+                current = 1;
+            }
+            current *= value;
+            if (value === 1000) {
+                total += current;
+                current = 0;
+            }
+        } else {
+            current += value;
+        }
+    }
+
+    if (!found) {
+        return NaN;
+    }
+
+    return total + current;
+}
+
+function formatDateForInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function normalizeYear(tokens, rawValue) {
+    if (!rawValue) {
+        return rawValue;
+    }
+
+    if (rawValue >= 1000) {
+        return rawValue;
+    }
+
+    if (tokens && tokens.length >= 1 && tokens[0] === 'twenty') {
+        if (tokens.length >= 2) {
+            const secondValue = spokenTokensToNumber([tokens[1]]);
+            if (!isNaN(secondValue) && secondValue >= 10) {
+                return 2000 + (rawValue - 20);
+            }
+            if (!isNaN(secondValue) && secondValue < 10) {
+                return 2000 + rawValue;
+            }
+        }
+        return 2000 + rawValue;
+    }
+
+    return rawValue;
+}
+
+function useRecognizedDate(itemId, date) {
     const dateInput = document.getElementById(`exp-input-${itemId}`);
     if (dateInput) {
         dateInput.value = date;
-        closeQRScanner();
+        closeVoiceCapture();
         addExpirationDate(itemId);
     }
 }
 
-// Close QR scanner
-function closeQRScanner() {
-    const modal = document.getElementById('qrScannerModal');
-    if (modal) {
-        // Stop video stream
-        const video = document.getElementById('qrVideo');
-        if (video && video.srcObject) {
-            const stream = video.srcObject;
-            const tracks = stream.getTracks();
-            tracks.forEach(track => track.stop());
+function closeVoiceCapture() {
+    if (activeVoiceRecognition) {
+        try {
+            activeVoiceRecognition.stop();
+        } catch (error) {
+            console.warn('Unable to stop speech recognition cleanly:', error);
         }
+        activeVoiceRecognition.onresult = null;
+        activeVoiceRecognition.onerror = null;
+        activeVoiceRecognition.onend = null;
+        activeVoiceRecognition = null;
+    }
+
+    const modal = document.getElementById('voiceCaptureModal');
+    if (modal) {
         modal.remove();
     }
 }

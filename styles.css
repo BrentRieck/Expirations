@@ -300,6 +300,46 @@ body {
     max-width: 400px;
 }
 
+.login-tabs {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 25px;
+    background: #f1f3f5;
+    padding: 6px;
+    border-radius: 12px;
+}
+
+.tab-button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: #6c757d;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+    background: rgba(102, 126, 234, 0.08);
+    color: #495057;
+}
+
+.tab-button.active {
+    background: white;
+    color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+}
+
+.form-panel {
+    display: none;
+}
+
+.form-panel.active {
+    display: block;
+}
+
 .login-box h2 {
     margin-bottom: 30px;
     color: #495057;
@@ -340,6 +380,16 @@ body {
     border-radius: 8px;
     margin-bottom: 20px;
     border: 1px solid #f5c6cb;
+}
+
+.info-message {
+    display: none;
+    background: #d4edda;
+    color: #155724;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid #c3e6cb;
 }
 
 .login-box .btn {
@@ -512,12 +562,12 @@ body {
     margin-bottom: 0;
 }
 
-.scan-btn {
+.voice-btn {
     min-width: 80px;
 }
 
-/* QR Scanner Modal */
-.qr-scanner-modal {
+/* Voice Capture Modal */
+.voice-capture-modal {
     position: fixed;
     top: 0;
     left: 0;
@@ -530,7 +580,7 @@ body {
     z-index: 1000;
 }
 
-.qr-scanner-content {
+.voice-capture-content {
     background: white;
     border-radius: 12px;
     padding: 20px;
@@ -540,59 +590,64 @@ body {
     overflow-y: auto;
 }
 
-.qr-scanner-header {
+.voice-capture-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
 }
 
-.qr-scanner-header h2 {
+.voice-capture-header h2 {
     margin: 0;
     color: #495057;
 }
 
-.qr-scanner-body {
+.voice-capture-body {
     text-align: center;
 }
 
-#qrVideo {
-    width: 100%;
-    max-width: 400px;
-    border: 2px solid #dee2e6;
-    border-radius: 8px;
-    margin-bottom: 20px;
-}
-
-.qr-scanner-instructions {
+.voice-instructions {
     margin-bottom: 20px;
     color: #6c757d;
 }
 
-.qr-result {
+.voice-status {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 15px;
+}
+
+.voice-result {
     margin-top: 20px;
     padding: 15px;
     border-radius: 8px;
 }
 
-.scan-success {
+.voice-success {
     background: #d4edda;
     color: #155724;
     border: 1px solid #c3e6cb;
 }
 
-.scan-success p {
+.voice-success p {
     margin: 10px 0;
 }
 
-.scan-error {
+.voice-error {
     background: #f8d7da;
     color: #721c24;
     border: 1px solid #f5c6cb;
 }
 
-.scan-error p {
+.voice-error p {
     margin: 10px 0;
+}
+
+.voice-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
 }
 
 .expiration-dates-list {

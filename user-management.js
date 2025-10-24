@@ -26,10 +26,53 @@ function getStoredUsers() {
     }
 }
 
+function getUserOfficesKey(username) {
+    return `medicalSupplyOffices_${username}`;
+}
+
+function getUserCurrentOfficeKey(username) {
+    return `currentOfficeId_${username}`;
+}
+
+function removeUserData(username) {
+    localStorage.removeItem(getUserOfficesKey(username));
+    localStorage.removeItem(getUserCurrentOfficeKey(username));
+}
+
+function saveUsers(users) {
+    localStorage.setItem('appUsers', JSON.stringify(users));
+}
+
+function countAdmins(users) {
+    return users.filter(user => user.role === 'admin').length;
+}
+
+function generateSecurePassword(length = 12) {
+    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+    let password = '';
+    const cryptoObj = window.crypto || window.msCrypto;
+
+    if (cryptoObj && cryptoObj.getRandomValues) {
+        const randomValues = new Uint32Array(length);
+        cryptoObj.getRandomValues(randomValues);
+        for (let i = 0; i < length; i++) {
+            password += charset[randomValues[i] % charset.length];
+        }
+    } else {
+        for (let i = 0; i < length; i++) {
+            password += charset[Math.floor(Math.random() * charset.length)];
+        }
+    }
+
+    return password;
+}
+
+let currentSession = null;
+
 // Check authentication and ensure user is admin
 function checkAuth() {
     const session = getSession();
-    
+
     if (!session || !session.loggedIn) {
         // No session, redirect to login
         window.location.href = 'login.html';
@@ -84,11 +127,14 @@ function addUser() {
     let users = getStoredUsers();
     
     // Check if user already exists
-    if (users.some(user => user.username === username)) {
+    if (users.some(user => user.username.toLowerCase() === username.toLowerCase())) {
         showMessage('A user with this username already exists', 'error');
         return;
     }
-    
+
+    // Reset any previous stored data for this username
+    removeUserData(username);
+
     // Add new user
     const newUser = {
         username: username,
@@ -96,14 +142,14 @@ function addUser() {
         role: role,
         createdAt: new Date().toISOString()
     };
-    
+
     users.push(newUser);
-    localStorage.setItem('appUsers', JSON.stringify(users));
-    
+    saveUsers(users);
+
     // Clear form
     document.getElementById('newUsername').value = '';
     document.getElementById('newPassword').value = '';
-    
+
     // Show success message
     showMessage(`User "${username}" added successfully`, 'success');
     
@@ -121,14 +167,120 @@ function removeUser(username) {
     if (confirm(`Are you sure you want to remove user "${username}"?`)) {
         // Get existing users
         let users = getStoredUsers();
-        
+
         // Remove user
         users = users.filter(user => user.username !== username);
-        localStorage.setItem('appUsers', JSON.stringify(users));
-        
+        saveUsers(users);
+
+        // Remove user-specific data
+        removeUserData(username);
+
         // Refresh user list
         renderUsers();
     }
+}
+
+function toggleUserRole(username) {
+    const users = getStoredUsers();
+    const user = users.find(user => user.username === username);
+
+    if (!user) {
+        showMessage(`User "${username}" was not found`, 'error');
+        return;
+    }
+
+    if (username === 'admin') {
+        showMessage('The default admin account must remain an administrator', 'error');
+        return;
+    }
+
+    const targetRole = user.role === 'admin' ? 'user' : 'admin';
+
+    if (user.role === 'admin') {
+        const adminCount = countAdmins(users);
+        if (adminCount <= 1) {
+            showMessage('At least one administrator account is required', 'error');
+            return;
+        }
+
+        if (currentSession && currentSession.username === username) {
+            showMessage('You cannot demote the account that is currently signed in', 'error');
+            return;
+        }
+    }
+
+    user.role = targetRole;
+    saveUsers(users);
+    showMessage(`User "${username}" is now assigned the ${targetRole} role`, 'success');
+    renderUsers();
+}
+
+function resetUserPassword(username) {
+    const users = getStoredUsers();
+    const user = users.find(user => user.username === username);
+
+    if (!user) {
+        showMessage(`User "${username}" was not found`, 'error');
+        return;
+    }
+
+    const newPassword = generateSecurePassword();
+    user.password = newPassword;
+    saveUsers(users);
+    renderUsers();
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(newPassword)
+            .then(() => {
+                showMessage(`New password for "${username}": ${newPassword} (copied to clipboard)`, 'success');
+            })
+            .catch(() => {
+                showMessage(`New password for "${username}": ${newPassword}`, 'success');
+            });
+    } else {
+        showMessage(`New password for "${username}": ${newPassword}`, 'success');
+    }
+}
+
+function updateOwnPassword() {
+    if (!currentSession) {
+        showMessage('Your session has expired. Please sign in again.', 'error');
+        return;
+    }
+
+    const newPassword = document.getElementById('adminNewPassword').value;
+    const confirmPassword = document.getElementById('adminConfirmPassword').value;
+
+    if (!newPassword || !confirmPassword) {
+        showMessage('Please complete both password fields', 'error');
+        return;
+    }
+
+    if (newPassword.length < 6) {
+        showMessage('Password must be at least 6 characters long', 'error');
+        return;
+    }
+
+    if (newPassword !== confirmPassword) {
+        showMessage('Passwords do not match', 'error');
+        return;
+    }
+
+    const users = getStoredUsers();
+    const user = users.find(user => user.username === currentSession.username);
+
+    if (!user) {
+        showMessage('Unable to locate the current user account. Please sign in again.', 'error');
+        return;
+    }
+
+    user.password = newPassword;
+    saveUsers(users);
+
+    document.getElementById('adminNewPassword').value = '';
+    document.getElementById('adminConfirmPassword').value = '';
+
+    showMessage('Your password has been updated successfully', 'success');
 }
 
 // Show message
@@ -152,7 +304,7 @@ function showMessage(message, type) {
 function renderUsers() {
     const container = document.getElementById('usersContainer');
     container.innerHTML = '';
-    
+
     // Get users
     const users = getStoredUsers();
     
@@ -188,13 +340,15 @@ function renderUsers() {
                     <span>${new Date(user.createdAt).toLocaleDateString()}</span>
                 </div>
             </div>
-            ${user.username !== 'admin' ? 
-                `<div class="office-actions">
-                    <button class="btn btn-danger btn-small" onclick="removeUser('${user.username}')">🗑️ Remove</button>
-                </div>` : 
-                `<div class="office-actions">
-                    <button class="btn btn-secondary btn-small" disabled>Protected Account</button>
-                </div>`}
+            <div class="user-actions">
+                ${user.username !== 'admin' ?
+                    `<button class="btn btn-secondary btn-small" onclick="toggleUserRole('${user.username}')">${user.role === 'admin' ? '⬇️ Demote to User' : '⬆️ Promote to Admin'}</button>` :
+                    `<button class="btn btn-secondary btn-small" disabled>Admin Role Locked</button>`}
+                <button class="btn btn-primary btn-small" onclick="resetUserPassword('${user.username}')">🔐 Reset Password</button>
+                ${user.username !== 'admin' ?
+                    `<button class="btn btn-danger btn-small" onclick="removeUser('${user.username}')">🗑️ Remove</button>` :
+                    `<button class="btn btn-secondary btn-small" disabled>Protected Account</button>`}
+            </div>
         `;
         container.appendChild(userCard);
     });
@@ -205,7 +359,8 @@ function initializeUserManagement() {
     // Check authentication first
     const session = checkAuth();
     if (!session) return;
-    
+
+    currentSession = session;
     renderUsers();
 }
 
