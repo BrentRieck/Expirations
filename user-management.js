@@ -39,36 +39,6 @@ function removeUserData(username) {
     localStorage.removeItem(getUserCurrentOfficeKey(username));
 }
 
-function saveUsers(users) {
-    localStorage.setItem('appUsers', JSON.stringify(users));
-}
-
-function countAdmins(users) {
-    return users.filter(user => user.role === 'admin').length;
-}
-
-function generateSecurePassword(length = 12) {
-    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
-    let password = '';
-    const cryptoObj = window.crypto || window.msCrypto;
-
-    if (cryptoObj && cryptoObj.getRandomValues) {
-        const randomValues = new Uint32Array(length);
-        cryptoObj.getRandomValues(randomValues);
-        for (let i = 0; i < length; i++) {
-            password += charset[randomValues[i] % charset.length];
-        }
-    } else {
-        for (let i = 0; i < length; i++) {
-            password += charset[Math.floor(Math.random() * charset.length)];
-        }
-    }
-
-    return password;
-}
-
-let currentSession = null;
-
 // Check authentication and ensure user is admin
 function checkAuth() {
     const session = getSession();
@@ -170,7 +140,7 @@ function removeUser(username) {
 
         // Remove user
         users = users.filter(user => user.username !== username);
-        saveUsers(users);
+        localStorage.setItem('appUsers', JSON.stringify(users));
 
         // Remove user-specific data
         removeUserData(username);
