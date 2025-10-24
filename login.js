@@ -1,27 +1,8 @@
-const USERS_STORAGE_KEY = 'appUsers';
-const LEGACY_OFFICES_KEY = 'medicalSupplyOffices';
-const LEGACY_CURRENT_OFFICE_KEY = 'currentOfficeId';
 const PUBLIC_OFFICES_KEY = 'medicalSupplyOffices_public';
 const PUBLIC_CURRENT_OFFICE_KEY = 'currentOfficeId_public';
-
-function getStoredUsers() {
-    const usersData = localStorage.getItem(USERS_STORAGE_KEY);
-    if (!usersData) {
-        return [];
-    }
-
-    try {
-        const parsed = JSON.parse(usersData);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-        console.error('Failed to parse stored users from localStorage:', error);
-        return [];
-    }
-}
-
-function saveUsers(users) {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-}
+const LEGACY_OFFICES_KEY = 'medicalSupplyOffices';
+const LEGACY_CURRENT_OFFICE_KEY = 'currentOfficeId';
+const API_BASE = '/api';
 
 function getUserOfficesKey(username) {
     return `medicalSupplyOffices_${username}`;
@@ -70,26 +51,6 @@ function ensureUserDataInitialized(username) {
     }
 }
 
-// Initialize default admin account if none exists
-function initializeDefaultAdmin() {
-    const users = getStoredUsers();
-
-    if (users.some(user => user.role === 'admin')) {
-        return false;
-    }
-
-    const defaultAdmin = {
-        username: 'admin',
-        password: 'admin123',
-        role: 'admin',
-        createdAt: new Date().toISOString()
-    };
-
-    users.push(defaultAdmin);
-    saveUsers(users);
-    return true;
-}
-
 function clearFormMessages() {
     const messageIds = ['loginMessage', 'adminMessage', 'registerMessage', 'registerSuccess'];
     messageIds.forEach(id => {
@@ -121,6 +82,26 @@ function switchForm(targetId) {
     }
 }
 
+async function apiRequest(endpoint, options = {}) {
+    const config = { ...options };
+    const headers = { ...(options.headers || {}) };
+    if (!headers['Content-Type'] && config.body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+    }
+    config.headers = headers;
+
+    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : null;
+
+    if (!response.ok) {
+        const errorMessage = payload && payload.error ? payload.error : 'An unexpected error occurred. Please try again.';
+        throw new Error(errorMessage);
+    }
+
+    return payload;
+}
+
 function startUserSession(user) {
     const session = {
         username: user.username,
@@ -140,8 +121,7 @@ function startUserSession(user) {
     }
 }
 
-// Handle login
-function handleLogin(event) {
+async function handleLogin(event) {
     event.preventDefault();
 
     const username = document.getElementById('username').value.trim();
@@ -150,24 +130,19 @@ function handleLogin(event) {
 
     clearFormMessages();
 
-    // Initialize default admin if needed
-    initializeDefaultAdmin();
-
-    // Get all users
-    const users = getStoredUsers();
-
-    // Find user with matching credentials
-    const user = users.find(u => u.username === username && u.password === password);
-
-    if (user) {
+    try {
+        const user = await apiRequest('/login', {
+            method: 'POST',
+            body: JSON.stringify({ username, password })
+        });
         startUserSession(user);
-    } else {
-        errorMessage.textContent = 'Invalid username or password';
+    } catch (error) {
+        errorMessage.textContent = error.message;
         errorMessage.style.display = 'block';
     }
 }
 
-function handleAdminLogin(event) {
+async function handleAdminLogin(event) {
     event.preventDefault();
 
     const username = document.getElementById('adminUsername').value.trim();
@@ -175,20 +150,25 @@ function handleAdminLogin(event) {
     const errorMessage = document.getElementById('adminMessage');
 
     clearFormMessages();
-    initializeDefaultAdmin();
 
-    const users = getStoredUsers();
-    const adminUser = users.find(user => user.username === username && user.password === password && user.role === 'admin');
+    try {
+        const user = await apiRequest('/login', {
+            method: 'POST',
+            body: JSON.stringify({ username, password })
+        });
 
-    if (adminUser) {
-        startUserSession(adminUser);
-    } else {
-        errorMessage.textContent = 'Invalid admin credentials';
+        if (user.role !== 'admin') {
+            throw new Error('This account does not have administrator access.');
+        }
+
+        startUserSession(user);
+    } catch (error) {
+        errorMessage.textContent = error.message;
         errorMessage.style.display = 'block';
     }
 }
 
-function handleRegistration(event) {
+async function handleRegistration(event) {
     event.preventDefault();
 
     const username = document.getElementById('newUserUsername').value.trim();
@@ -198,7 +178,6 @@ function handleRegistration(event) {
     const successMessage = document.getElementById('registerSuccess');
 
     clearFormMessages();
-    initializeDefaultAdmin();
 
     if (!username) {
         errorMessage.textContent = 'Please choose a username.';
@@ -218,32 +197,21 @@ function handleRegistration(event) {
         return;
     }
 
-    const users = getStoredUsers();
-    const usernameTaken = users.some(user => user.username.toLowerCase() === username.toLowerCase());
+    try {
+        const user = await apiRequest('/register', {
+            method: 'POST',
+            body: JSON.stringify({ username, password })
+        });
 
-    if (usernameTaken) {
-        errorMessage.textContent = 'A user with this username already exists.';
+        successMessage.textContent = `Welcome, ${user.username}! Redirecting to your dashboard...`;
+        successMessage.style.display = 'block';
+        startUserSession(user);
+    } catch (error) {
+        errorMessage.textContent = error.message;
         errorMessage.style.display = 'block';
-        return;
     }
-
-    const newUser = {
-        username,
-        password,
-        role: 'user',
-        createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    saveUsers(users);
-
-    successMessage.textContent = `Welcome, ${username}! Redirecting to your dashboard...`;
-    successMessage.style.display = 'block';
-
-    startUserSession(newUser);
 }
 
-// View as guest (read-only mode)
 function viewAsGuest() {
     migrateLegacyDataToPublic();
 
@@ -260,14 +228,11 @@ function viewAsGuest() {
     };
     localStorage.setItem('userSession', JSON.stringify(session));
 
-    // Redirect to office selector
     window.location.href = 'office-selector.html';
 }
 
-// Initialize form toggles and default admin on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async () => {
     migrateLegacyDataToPublic();
-    const isNewInstall = initializeDefaultAdmin();
 
     document.querySelectorAll('.tab-button').forEach(button => {
         button.addEventListener('click', () => switchForm(button.dataset.target));
@@ -275,17 +240,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     switchForm('loginPanel');
 
-    if (isNewInstall) {
-        // Show info about default credentials
-        const loginInfo = document.createElement('div');
-        loginInfo.className = 'login-info';
-        loginInfo.innerHTML = `
-            <h3>Default Admin Credentials</h3>
-            <p><strong>Username:</strong> admin</p>
-            <p><strong>Password:</strong> admin123</p>
-            <p class="info-note">⚠️ Please change these credentials after first login.</p>
-            <p class="info-note">Use the Admin Login tab to access the management console.</p>
-        `;
-        document.querySelector('.login-container').appendChild(loginInfo);
+    try {
+        const setupState = await apiRequest('/setup-state');
+        if (setupState && setupState.defaultAdminCreated) {
+            const loginInfo = document.createElement('div');
+            loginInfo.className = 'login-info';
+            loginInfo.innerHTML = `
+                <h3>Default Admin Credentials</h3>
+                <p><strong>Username:</strong> admin</p>
+                <p><strong>Password:</strong> admin123</p>
+                <p class="info-note">⚠️ Please change these credentials after first login.</p>
+                <p class="info-note">Use the Admin Login tab to access the management console.</p>
+            `;
+            document.querySelector('.login-container').appendChild(loginInfo);
+        }
+    } catch (error) {
+        console.error('Failed to retrieve setup state:', error);
     }
 });
